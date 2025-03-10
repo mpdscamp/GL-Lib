@@ -6,11 +6,17 @@
 #include <string>
 #include <unordered_map>
 #include <memory>
+#include <filesystem>
 
 class ResourceManager {
 public:
-    // Access the singleton instance.
-    static ResourceManager& getInstance();
+    // Constructor/Destructor
+    ResourceManager() = default;
+    ~ResourceManager() = default;
+
+    // Non-copyable
+    ResourceManager(const ResourceManager&) = delete;
+    ResourceManager& operator=(const ResourceManager&) = delete;
 
     // Loads (or retrieves from cache) and returns a shader.
     std::shared_ptr<gl::Shader> loadShader(const std::string& name, const char* vertexPath, const char* fragmentPath);
@@ -20,19 +26,22 @@ public:
     std::shared_ptr<gl::Texture> loadTexture(const std::string& name, const std::string& filePath);
     std::shared_ptr<gl::Texture> getTexture(const std::string& name);
 
+    // Hot reload shaders
+    void reloadShaders();
+
     // Clears all loaded resources.
     void clear();
 
-    // Delete copy constructor and assignment operator.
-    ResourceManager(const ResourceManager&) = delete;
-    ResourceManager& operator=(const ResourceManager&) = delete;
+    // Convenience method to get base resource directory
+    static std::filesystem::path getResourcePath(const std::string& relativePath);
 
 private:
-    ResourceManager() = default;
-    ~ResourceManager() = default;
-
     std::unordered_map<std::string, std::shared_ptr<gl::Shader>> shaders_;
     std::unordered_map<std::string, std::shared_ptr<gl::Texture>> textures_;
+
+    // Store original paths for hot-reloading
+    std::unordered_map<std::string, std::string> shaderSourcePaths_;
+    std::unordered_map<std::string, std::string> textureSourcePaths_;
 };
 
 #endif // RESOURCE_MANAGER_HPP

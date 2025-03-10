@@ -3,9 +3,10 @@
     "window/Window.cpp"
     "scenes/Scene.cpp"
     "managers/ResourceManager.cpp"
+    "profiling/Profiler.cpp"
     
     ../include/libs/glad/src/glad.c
- "window/Camera.cpp")
+ "window/Camera.cpp" "profiling/Profiler.cpp")
 
 # Ensure GLAD, GLM, stb_image, and other headers are found by your compiler:
 target_include_directories(OpenGL PRIVATE

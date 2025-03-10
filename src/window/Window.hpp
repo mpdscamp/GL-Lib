@@ -5,6 +5,12 @@
 #include <GLFW/glfw3.h>
 #include <string>
 #include <functional>
+#include <vector>
+#include <array>
+#include <memory>
+
+class InputManager;
+class Scene;
 
 class Window {
 public:
@@ -25,42 +31,63 @@ public:
 
     GLFWwindow* getGLFWWindow() const;
 
-    // Set a framebuffer resize callback
-    void setFramebufferSizeCallback(GLFWframebuffersizefun callback);
+    // Input handling
+    void processInput(float deltaTime);
+    void captureCursor();
 
-    // Mouse callbacks
+    // Mouse handling
     void setMouseCallback(std::function<void(double, double)> callback);
 
-    // Set cursor mode (normal, hidden, disabled)
-    void setCursorMode(int mode);
+    // Window resize handling
+    void registerResizeCallback(std::function<void(int, int)> callback);
 
     // Get window dimensions
     int getWidth() const { return width_; }
     int getHeight() const { return height_; }
 
-    // Process input (e.g. keyboard)
-    void processInput(float deltaTime);
+    // Input state access
+    bool isKeyPressed(int key) const;
+    bool isKeyHeld(int key) const;
 
-    // Force cursor capture (call this when clicking or focusing window)
-    void captureCursor();
-
-    // Mouse position and state
-    bool firstMouse = true;
-    double lastX, lastY;
-
-    // Key state
-    bool keys[1024] = { false };
-
-    // Make accessible to our callback wrappers
-    int width_;
-    int height_;
-    std::function<void(double, double)> mouseCallback_;
+    // Add a scene for notification purposes
+    void addScene(Scene* scene);
+    void removeScene(Scene* scene);
 
 private:
     GLFWwindow* window_;
+    int width_;
+    int height_;
 
-    // Removed static callbacks as they are now defined outside the class
-    // This allows easier access to the callback wrapper functions
+    // Input state
+    std::array<bool, 1024> keys = {}; // All initialized to false
+
+    // Mouse state
+    bool firstMouse = true;
+    double lastX, lastY;
+    std::function<void(double, double)> mouseCallback_;
+
+    // Resize callbacks
+    std::vector<std::function<void(int, int)>> resizeCallbacks_;
+
+    // Scenes to notify of changes
+    std::vector<Scene*> scenes_;
+
+    // GLFW callbacks (static methods that dispatch to the appropriate window)
+    static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+    static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
+    static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
+    static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+    static void windowFocusCallback(GLFWwindow* window, int focused);
+
+    // Static map of window instances for callbacks
+    static std::unordered_map<GLFWwindow*, Window*> windowInstances;
+
+    // Allow our static callbacks to access private members
+    friend void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+    friend void mouseCallback(GLFWwindow* window, double xpos, double ypos);
+    friend void framebufferSizeCallback(GLFWwindow* window, int width, int height);
+    friend void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+    friend void windowFocusCallback(GLFWwindow* window, int focused);
 };
 
 #endif // WINDOW_HPP

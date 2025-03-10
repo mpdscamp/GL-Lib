@@ -3,13 +3,14 @@
 
 #include <glad/glad.h>
 #include "shader_error.hpp"
+#include "logger.hpp"
 
 #include <string>
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <unordered_map>
-#include <filesystem>  // C++17 filesystem
+#include <filesystem>
 
 namespace gl {
 
@@ -200,10 +201,10 @@ namespace gl {
             uniformLocationCache[name] = location;
 
             if (location == -1) {
-                std::cerr << "Warning: " << gl::ShaderErrorManager::instance().formatError(
+                gl::logWarning(gl::ShaderErrorManager::instance().formatError(
                     gl::ShaderErrorCode::UNIFORM_NOT_FOUND,
                     "'" + name + "' doesn't exist or is not used"
-                ) << std::endl;
+                ));
             }
             return location;
         }

@@ -1,15 +1,31 @@
 #include "Window.hpp"
+#include "../scenes/Scene.hpp"
 
 #include <glad/glad.h>
 #include <stdexcept>
 #include <iostream>
 #include <unordered_map>
+#include <algorithm>
 
-// Map to store Window instances associated with each GLFWwindow
-static std::unordered_map<GLFWwindow*, Window*> windowInstances;
+// Initialize static member
+std::unordered_map<GLFWwindow*, Window*> Window::windowInstances;
 
-// Static callback functions that delegate to the appropriate Window instance
-static void mouseCallbackWrapper(GLFWwindow* window, double xpos, double ypos) {
+// Static callback methods
+void Window::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    auto it = windowInstances.find(window);
+    if (it != windowInstances.end() && key >= 0 && key < 1024) {
+        Window* windowInstance = it->second;
+
+        if (action == GLFW_PRESS) {
+            windowInstance->keys[key] = true;
+        }
+        else if (action == GLFW_RELEASE) {
+            windowInstance->keys[key] = false;
+        }
+    }
+}
+
+void Window::mouseCallback(GLFWwindow* window, double xpos, double ypos) {
     auto it = windowInstances.find(window);
     if (it != windowInstances.end()) {
         Window* windowInstance = it->second;
@@ -28,40 +44,36 @@ static void mouseCallbackWrapper(GLFWwindow* window, double xpos, double ypos) {
         windowInstance->lastY = ypos;
 
         if (windowInstance->mouseCallback_) {
-            // Debug output
-            // std::cout << "Mouse moved: " << xoffset << ", " << yoffset << std::endl;
             windowInstance->mouseCallback_(xoffset, yoffset);
         }
     }
 }
 
-static void keyCallbackWrapper(GLFWwindow* window, int key, int scancode, int action, int mode) {
-    auto it = windowInstances.find(window);
-    if (it != windowInstances.end() && key >= 0 && key < 1024) {
-        Window* windowInstance = it->second;
-
-        if (action == GLFW_PRESS) {
-            windowInstance->keys[key] = true;
-        }
-        else if (action == GLFW_RELEASE) {
-            windowInstance->keys[key] = false;
-        }
-    }
-}
-
-static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
-    glViewport(0, 0, width, height);
-
-    // Update window size if needed
+void Window::framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     auto it = windowInstances.find(window);
     if (it != windowInstances.end()) {
         Window* windowInstance = it->second;
         windowInstance->width_ = width;
         windowInstance->height_ = height;
+
+        // Call all registered resize callbacks
+        for (const auto& callback : windowInstance->resizeCallbacks_) {
+            callback(width, height);
+        }
+
+        // Notify all scenes of resize
+        for (Scene* scene : windowInstance->scenes_) {
+            if (scene) {
+                scene->onWindowResize(width, height);
+            }
+        }
     }
+
+    // Update viewport
+    glViewport(0, 0, width, height);
 }
 
-static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+void Window::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
         auto it = windowInstances.find(window);
         if (it != windowInstances.end()) {
@@ -71,7 +83,7 @@ static void mouseButtonCallback(GLFWwindow* window, int button, int action, int 
     }
 }
 
-static void windowFocusCallback(GLFWwindow* window, int focused) {
+void Window::windowFocusCallback(GLFWwindow* window, int focused) {
     if (focused) {
         auto it = windowInstances.find(window);
         if (it != windowInstances.end()) {
@@ -84,6 +96,7 @@ static void windowFocusCallback(GLFWwindow* window, int focused) {
 Window::Window(int width, int height, const std::string& title)
     : width_(width), height_(height), lastX(width / 2.0), lastY(height / 2.0)
 {
+    // Create the window
     window_ = glfwCreateWindow(width_, height_, title.c_str(), nullptr, nullptr);
     if (!window_) {
         throw std::runtime_error("Failed to create GLFW window");
@@ -92,24 +105,29 @@ Window::Window(int width, int height, const std::string& title)
     // Store this instance for callbacks
     windowInstances[window_] = this;
 
+    // Make context current
     glfwMakeContextCurrent(window_);
 
-    // Set callbacks directly here - this is important!
+    // Set callbacks
     glfwSetFramebufferSizeCallback(window_, framebufferSizeCallback);
-    glfwSetCursorPosCallback(window_, mouseCallbackWrapper);
-    glfwSetKeyCallback(window_, keyCallbackWrapper);
+    glfwSetCursorPosCallback(window_, mouseCallback);
+    glfwSetKeyCallback(window_, keyCallback);
     glfwSetMouseButtonCallback(window_, mouseButtonCallback);
     glfwSetWindowFocusCallback(window_, windowFocusCallback);
 
-    // Initialize keys array
-    for (int i = 0; i < 1024; i++) {
-        keys[i] = false;
-    }
+    // Initialize keys array to all false
+    keys.fill(false);
 }
 
 Window::~Window() {
     if (window_) {
+        // Clean up scenes references to prevent dangling pointers
+        scenes_.clear();
+
+        // Remove from static map
         windowInstances.erase(window_);
+
+        // Destroy the window
         glfwDestroyWindow(window_);
         window_ = nullptr;
     }
@@ -118,21 +136,29 @@ Window::~Window() {
 Window::Window(Window&& other) noexcept
     : window_(other.window_), width_(other.width_), height_(other.height_),
     lastX(other.lastX), lastY(other.lastY), firstMouse(other.firstMouse),
-    mouseCallback_(std::move(other.mouseCallback_))
+    mouseCallback_(std::move(other.mouseCallback_)),
+    resizeCallbacks_(std::move(other.resizeCallbacks_)),
+    scenes_(std::move(other.scenes_))
 {
+    // Update the static map
     windowInstances[window_] = this;
-    for (int i = 0; i < 1024; i++) {
-        keys[i] = other.keys[i];
-    }
+
+    // Move the keys array
+    keys = std::move(other.keys);
+
+    // Reset the other window pointer
     other.window_ = nullptr;
 }
 
 Window& Window::operator=(Window&& other) noexcept {
     if (this != &other) {
+        // Clean up this instance
         if (window_) {
             windowInstances.erase(window_);
             glfwDestroyWindow(window_);
         }
+
+        // Move data from other
         window_ = other.window_;
         width_ = other.width_;
         height_ = other.height_;
@@ -140,12 +166,14 @@ Window& Window::operator=(Window&& other) noexcept {
         lastY = other.lastY;
         firstMouse = other.firstMouse;
         mouseCallback_ = std::move(other.mouseCallback_);
+        resizeCallbacks_ = std::move(other.resizeCallbacks_);
+        scenes_ = std::move(other.scenes_);
+        keys = std::move(other.keys);
 
-        for (int i = 0; i < 1024; i++) {
-            keys[i] = other.keys[i];
-        }
-
+        // Update the static map
         windowInstances[window_] = this;
+
+        // Reset the other window pointer
         other.window_ = nullptr;
     }
     return *this;
@@ -167,37 +195,34 @@ GLFWwindow* Window::getGLFWWindow() const {
     return window_;
 }
 
-void Window::setFramebufferSizeCallback(GLFWframebuffersizefun callback) {
-    glfwSetFramebufferSizeCallback(window_, callback);
-}
-
 void Window::setMouseCallback(std::function<void(double, double)> callback) {
     mouseCallback_ = callback;
 }
 
-void Window::setCursorMode(int mode) {
-    glfwSetInputMode(window_, GLFW_CURSOR, mode);
+void Window::registerResizeCallback(std::function<void(int, int)> callback) {
+    resizeCallbacks_.push_back(callback);
 }
 
 void Window::captureCursor() {
     glfwSetInputMode(window_, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
     firstMouse = true;
 }
 
 void Window::processInput(float deltaTime) {
-    // Check for escape key to close window
+    // Check for escape key to close application
     if (glfwGetKey(window_, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window_, true);
     }
 
-    // Manual toggle for cursor capture using TAB key
+    // Use TAB to toggle cursor capture/release instead
     static bool tabPressed = false;
-    if (glfwGetKey(window_, GLFW_KEY_TAB) == GLFW_PRESS) {
+    bool tabCurrentlyPressed = glfwGetKey(window_, GLFW_KEY_TAB) == GLFW_PRESS;
+
+    if (tabCurrentlyPressed) {
         if (!tabPressed) {
             tabPressed = true;
-            int currentMode = glfwGetInputMode(window_, GLFW_CURSOR);
-            if (currentMode == GLFW_CURSOR_DISABLED) {
+            int cursorMode = glfwGetInputMode(window_, GLFW_CURSOR);
+            if (cursorMode == GLFW_CURSOR_DISABLED) {
                 glfwSetInputMode(window_, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             }
             else {
@@ -209,14 +234,41 @@ void Window::processInput(float deltaTime) {
         tabPressed = false;
     }
 
-    // Update key state directly for more accurate results
-    keys[GLFW_KEY_W] = glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS;
-    keys[GLFW_KEY_A] = glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS;
-    keys[GLFW_KEY_S] = glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS;
-    keys[GLFW_KEY_D] = glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS;
-    keys[GLFW_KEY_Q] = glfwGetKey(window_, GLFW_KEY_Q) == GLFW_PRESS;
-    keys[GLFW_KEY_E] = glfwGetKey(window_, GLFW_KEY_E) == GLFW_PRESS;
-    keys[GLFW_KEY_R] = glfwGetKey(window_, GLFW_KEY_R) == GLFW_PRESS;
-    keys[GLFW_KEY_LEFT] = glfwGetKey(window_, GLFW_KEY_LEFT) == GLFW_PRESS;
-    keys[GLFW_KEY_RIGHT] = glfwGetKey(window_, GLFW_KEY_RIGHT) == GLFW_PRESS;
+    // Only update the keys we actually use
+    const int monitored_keys[] = {
+        GLFW_KEY_W, GLFW_KEY_A, GLFW_KEY_S, GLFW_KEY_D,
+        GLFW_KEY_Q, GLFW_KEY_E, GLFW_KEY_R, GLFW_KEY_F5,
+        GLFW_KEY_P, GLFW_KEY_LEFT_BRACKET, GLFW_KEY_RIGHT_BRACKET,
+        GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_UP, GLFW_KEY_DOWN,
+        GLFW_KEY_SPACE, GLFW_KEY_TAB
+    };
+
+    for (int key : monitored_keys) {
+        keys[key] = glfwGetKey(window_, key) == GLFW_PRESS;
+    }
+}
+
+bool Window::isKeyPressed(int key) const {
+    if (key < 0 || key >= 1024) return false;
+    return keys[key];
+}
+
+bool Window::isKeyHeld(int key) const {
+    if (key < 0 || key >= 1024) return false;
+    return keys[key];
+}
+
+void Window::addScene(Scene* scene) {
+    if (scene) {
+        // Only add if not already in the list
+        if (std::find(scenes_.begin(), scenes_.end(), scene) == scenes_.end()) {
+            scenes_.push_back(scene);
+        }
+    }
+}
+
+void Window::removeScene(Scene* scene) {
+    if (scene) {
+        scenes_.erase(std::remove(scenes_.begin(), scenes_.end(), scene), scenes_.end());
+    }
 }

@@ -1,10 +1,9 @@
 #include "Window.hpp"
-#include "../scenes/Scene.hpp"
+#include "../core/Scene.hpp"
+#include "../gl/logger.hpp"
 
 #include <glad/glad.h>
 #include <stdexcept>
-#include <iostream>
-#include <unordered_map>
 #include <algorithm>
 
 // Initialize static member
@@ -67,6 +66,8 @@ void Window::framebufferSizeCallback(GLFWwindow* window, int width, int height) 
                 scene->onWindowResize(width, height);
             }
         }
+
+        gl::logDebug("Window resized to " + std::to_string(width) + "x" + std::to_string(height));
     }
 
     // Update viewport
@@ -206,6 +207,7 @@ void Window::registerResizeCallback(std::function<void(int, int)> callback) {
 void Window::captureCursor() {
     glfwSetInputMode(window_, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     firstMouse = true;
+    gl::logDebug("Cursor captured");
 }
 
 void Window::processInput(float deltaTime) {
@@ -214,7 +216,7 @@ void Window::processInput(float deltaTime) {
         glfwSetWindowShouldClose(window_, true);
     }
 
-    // Use TAB to toggle cursor capture/release instead
+    // Use TAB to toggle cursor capture/release
     static bool tabPressed = false;
     bool tabCurrentlyPressed = glfwGetKey(window_, GLFW_KEY_TAB) == GLFW_PRESS;
 
@@ -224,6 +226,7 @@ void Window::processInput(float deltaTime) {
             int cursorMode = glfwGetInputMode(window_, GLFW_CURSOR);
             if (cursorMode == GLFW_CURSOR_DISABLED) {
                 glfwSetInputMode(window_, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                gl::logDebug("Cursor released");
             }
             else {
                 captureCursor();
@@ -263,12 +266,17 @@ void Window::addScene(Scene* scene) {
         // Only add if not already in the list
         if (std::find(scenes_.begin(), scenes_.end(), scene) == scenes_.end()) {
             scenes_.push_back(scene);
+            gl::logDebug("Scene added to window");
         }
     }
 }
 
 void Window::removeScene(Scene* scene) {
     if (scene) {
-        scenes_.erase(std::remove(scenes_.begin(), scenes_.end(), scene), scenes_.end());
+        auto it = std::find(scenes_.begin(), scenes_.end(), scene);
+        if (it != scenes_.end()) {
+            scenes_.erase(it);
+            gl::logDebug("Scene removed from window");
+        }
     }
 }

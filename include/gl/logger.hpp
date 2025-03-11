@@ -51,11 +51,22 @@ namespace gl {
             // Add timestamp
             auto now = std::chrono::system_clock::now();
             auto time = std::chrono::system_clock::to_time_t(now);
-            ss << std::ctime(&time);
-            ss.seekp(-1, ss.cur); // Remove trailing newline
+            char timeStr[26];
+#ifdef _WIN32
+            ctime_s(timeStr, sizeof(timeStr), &time);
+#else
+            // For non-Windows platforms that might not have ctime_s
+            strncpy(timeStr, ctime(&time), sizeof(timeStr) - 1);
+            timeStr[sizeof(timeStr) - 1] = '\0'; // Ensure null termination
+#endif
 
-            // Add level
-            ss << " [" << levelToString(level) << "] ";
+            // Remove trailing newline that ctime adds
+            size_t len = strlen(timeStr);
+            if (len > 0 && timeStr[len - 1] == '\n') {
+                timeStr[len - 1] = '\0';
+            }
+
+            ss << timeStr << " [" << levelToString(level) << "] ";
 
             // Add source info
             ss << location.file_name() << ":" << location.line() << " ";

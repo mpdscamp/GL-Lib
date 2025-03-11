@@ -1,13 +1,18 @@
 ﻿#include "window/Window.hpp"
-#include "scenes/Scene.hpp"
+#include "core/Scene.hpp"
 #include "managers/ResourceManager.hpp"
 #include "profiling/Profiler.hpp"
-#include "gl/logger.hpp" // Add logger header
+#include "gl/logger.hpp"
 
 #include <glad/glad.h>
-
+#include <GLFW/glfw3.h>
 #include <stdexcept>
+#include <string>
+#include <iostream>
+
+#ifdef _WIN32
 #include <Windows.h>
+#endif
 
 // GLFW error callback
 void glfw_error_callback(int error, const char* description) {
@@ -16,18 +21,21 @@ void glfw_error_callback(int error, const char* description) {
 
 int main() {
     try {
-        // Create a console window and redirect stdout
+        // Create console for output on Windows
+#ifdef _WIN32
         if (AllocConsole()) {
             FILE* pCout;
             freopen_s(&pCout, "CONOUT$", "w", stdout);
             std::cout.clear();
         }
+#endif
 
         // Initialize logger
         gl::setLogLevel(gl::LogLevel::Info);
         gl::setLogFile("application.log");
         gl::logInfo("Application starting");
 
+        // Initialize GLFW
         glfwSetErrorCallback(glfw_error_callback);
         if (!glfwInit()) {
             throw std::runtime_error("Failed to initialize GLFW");
@@ -37,36 +45,37 @@ int main() {
         struct GLFWTerminator {
             ~GLFWTerminator() {
                 glfwTerminate();
+                gl::logInfo("GLFW terminated");
             }
         } glfwTerminator;
 
-        // Set GLFW context hints
+        // Set GLFW window hints
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #ifdef __APPLE__
         glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
+
         // Enable debug context in debug builds
 #ifdef _DEBUG
         glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
 #endif
-        // Force focus on window
-        glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);
 
-        // Create window and resource manager
-        Window window(800, 600, "PROJECT I");
-        ResourceManager resourceManager;
+        // Create window
+        Window window(800, 600, "3D Graphics Demo");
+        gl::logInfo("Window created: 800x600");
 
         // Initialize GLAD
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
             throw std::runtime_error("Failed to initialize GLAD");
         }
+        gl::logInfo("GLAD initialized");
 
-        // Enable vsync
+        // Enable VSync
         glfwSwapInterval(1);
 
-        // Set up debug callback in debug builds
+        // Setup OpenGL debug callback in debug builds
 #ifdef _DEBUG
         GLint flags;
         glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
@@ -97,12 +106,13 @@ int main() {
                         }
                 }, nullptr);
 
-            // Message verbosity
+            // Reduce message verbosity
             glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
+            gl::logDebug("OpenGL debug output enabled");
         }
 #endif
 
-        // Get OpenGL info
+        // Log OpenGL information
         const GLubyte* renderer = glGetString(GL_RENDERER);
         const GLubyte* version = glGetString(GL_VERSION);
         gl::logInfo("Renderer: " + std::string(reinterpret_cast<const char*>(renderer)));
@@ -113,75 +123,59 @@ int main() {
         gl::enable(gl::Capability::DepthTest);
         gl::enable(gl::Capability::Blend);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        gl::logDebug("OpenGL state configured");
 
-        // Force cursor capture after window creation but before scene setup
+        // Create resource manager
+        ResourceManager resourceManager;
+        gl::logInfo("Resource manager created");
+
+        // Capture cursor for camera control
         window.captureCursor();
-        glfwFocusWindow(window.getGLFWWindow());
+        gl::logDebug("Cursor captured");
 
-        // Create and initialize the scene
+        // Create and initialize scene
         Scene scene(window, resourceManager);
+        scene.init();
         gl::logInfo("Scene initialized");
 
-        // Setup profiler
+        // Create profiler
         Profiler profiler;
+        gl::logDebug("Profiler created");
 
-        // Timing variables for FPS counter
+        // Timing variables
         float lastFrame = 0.0f;
         float lastFPSUpdate = 0.0f;
+        float lastProfilerUpdate = 0.0f;
         int frameCount = 0;
-        float fps = 0.0f;
-
-        // Shader hot-reload key state
-        bool f5Pressed = false;
 
         gl::logInfo("Entering main loop");
 
-        // Render loop
+        // Main render loop
         while (!window.shouldClose()) {
+            // Start frame profiling
             profiler.beginFrame();
 
             // Calculate delta time
-            float currentFrame = static_cast<float>(glfwGetTime());
-            float deltaTime = currentFrame - lastFrame;
-            lastFrame = currentFrame;
+            float currentTime = static_cast<float>(glfwGetTime());
+            float deltaTime = currentTime - lastFrame;
+            lastFrame = currentTime;
 
             // Calculate FPS
             frameCount++;
-            if (currentFrame - lastFPSUpdate >= 0.5f) { // Update every half second
-                fps = frameCount / (currentFrame - lastFPSUpdate);
+            if (currentTime - lastFPSUpdate >= 0.5f) {
+                float fps = frameCount / (currentTime - lastFPSUpdate);
                 frameCount = 0;
-                lastFPSUpdate = currentFrame;
+                lastFPSUpdate = currentTime;
 
                 // Update window title with FPS
-                std::string title = "PROJECT I | FPS: " + std::to_string(static_cast<int>(fps));
+                std::string title = "3D Graphics Demo | FPS: " + std::to_string(static_cast<int>(fps));
                 glfwSetWindowTitle(window.getGLFWWindow(), title.c_str());
-
-                // Log FPS at debug level
                 gl::logDebug("FPS: " + std::to_string(static_cast<int>(fps)));
             }
 
-            // Poll events
+            // Process input
             profiler.beginSection("Input");
             window.pollEvents();
-            window.processInput(deltaTime);
-
-            // Check for shader hot-reload key (F5)
-            if (glfwGetKey(window.getGLFWWindow(), GLFW_KEY_F5) == GLFW_PRESS) {
-                if (!f5Pressed) {
-                    f5Pressed = true;
-                    resourceManager.reloadShaders();
-                    gl::logInfo("Shaders reloaded");
-                }
-            }
-            else {
-                f5Pressed = false;
-            }
-
-            // Periodically check if cursor is captured, recapture if necessary
-            if (glfwGetInputMode(window.getGLFWWindow(), GLFW_CURSOR) != GLFW_CURSOR_DISABLED &&
-                glfwGetWindowAttrib(window.getGLFWWindow(), GLFW_FOCUSED)) {
-                window.captureCursor();
-            }
             profiler.endSection("Input");
 
             // Update scene
@@ -189,13 +183,10 @@ int main() {
             scene.update(deltaTime);
             profiler.endSection("Update");
 
-            // Render
+            // Render scene
             profiler.beginSection("Render");
-            // Clear the screen
             glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-            // Render scene
             scene.render();
             profiler.endSection("Render");
 
@@ -204,21 +195,34 @@ int main() {
             window.swapBuffers();
             profiler.endSection("SwapBuffers");
 
+            // End frame profiling
             profiler.endFrame();
 
-            // Print profiling stats periodically
-            static double lastStatTime = 0.0;
-            if (currentFrame - lastStatTime > 5.0) {
+            // Print profiler stats periodically
+            if (currentTime - lastProfilerUpdate >= 5.0f) {
                 profiler.printStats();
-                lastStatTime = currentFrame;
+                lastProfilerUpdate = currentTime;
+            }
+
+            // Check if ESC was pressed to exit
+            if (glfwGetKey(window.getGLFWWindow(), GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+                window.setShouldClose(true);
+            }
+
+            // Periodically check if cursor is captured, recapture if necessary
+            if (glfwGetInputMode(window.getGLFWWindow(), GLFW_CURSOR) != GLFW_CURSOR_DISABLED &&
+                glfwGetWindowAttrib(window.getGLFWWindow(), GLFW_FOCUSED)) {
+                window.captureCursor();
             }
         }
 
+        gl::logInfo("Main loop exited");
         gl::logInfo("Application shutting down normally");
         return 0;
     }
     catch (const std::exception& e) {
         gl::logError("FATAL ERROR: " + std::string(e.what()));
+        std::cerr << "Fatal error: " << e.what() << std::endl;
         return -1;
     }
 }

@@ -7,9 +7,8 @@
 #include <functional>
 #include <vector>
 #include <array>
-#include <memory>
+#include <unordered_map>
 
-class InputManager;
 class Scene;
 
 class Window {
@@ -26,9 +25,9 @@ public:
     Window& operator=(Window&& other) noexcept;
 
     bool shouldClose() const;
+    void setShouldClose(bool value) { glfwSetWindowShouldClose(window_, value); }
     void swapBuffers() const;
     void pollEvents() const;
-
     GLFWwindow* getGLFWWindow() const;
 
     // Input handling
@@ -49,7 +48,7 @@ public:
     bool isKeyPressed(int key) const;
     bool isKeyHeld(int key) const;
 
-    // Add a scene for notification purposes
+    // Scene management for notification purposes
     void addScene(Scene* scene);
     void removeScene(Scene* scene);
 
@@ -81,13 +80,6 @@ private:
 
     // Static map of window instances for callbacks
     static std::unordered_map<GLFWwindow*, Window*> windowInstances;
-
-    // Allow our static callbacks to access private members
-    friend void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
-    friend void mouseCallback(GLFWwindow* window, double xpos, double ypos);
-    friend void framebufferSizeCallback(GLFWwindow* window, int width, int height);
-    friend void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
-    friend void windowFocusCallback(GLFWwindow* window, int focused);
 };
 
 #endif // WINDOW_HPP

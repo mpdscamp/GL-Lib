@@ -485,7 +485,7 @@ void Scene::renderQuad()
             dstPoints[i] = glm::vec2((v.x + 1.0f) * 0.5f, (v.y + 1.0f) * 0.5f);
         }
 
-        glm::mat3 T = computeHomography(srcPoints_, dstPoints);
+        glm::mat3 T = gl::computeHomography(srcPoints_, dstPoints);
         homographyCache_ = glm::inverse(T);
         homographyDirty_ = false;
 

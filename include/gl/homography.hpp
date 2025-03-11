@@ -3,108 +3,228 @@
 
 #include <array>
 #include <glm/glm.hpp>
+#include <glm/gtc/epsilon.hpp>
 #include <stdexcept>
 #include <cmath>
+#include <optional>
 
-// Computes the homography H that maps 4 source points to 4 destination points.
-// The source points (src) are assumed to be in the unit square (0,0) to (1,1).
-// The resulting H is a 3x3 matrix such that for any point p in src (in homogeneous coordinates),
-// H * p ~ q, where q is the corresponding destination point.
-inline glm::mat3 computeHomography(const std::array<glm::vec2, 4>& src, const std::array<glm::vec2, 4>& dst) {
-    // We want to solve for the 8 unknowns [h0, h1, h2, h3, h4, h5, h6, h7] in H,
-    // where H is defined as:
-    //      [ h0 h1 h2 ]
-    // H =  [ h3 h4 h5 ]
-    //      [ h6 h7  1 ]
-    // For each correspondence (x, y) -> (x', y'), the two equations are:
-    //   x * h0 + y * h1 +     h2 - x*x' * h6 - y*x' * h7 = x'
-    //   x * h3 + y * h4 +     h5 - x*y' * h6 - y*y' * h7 = y'
-    // We set up an 8x8 linear system A * x = b.
-    float A[8][8] = { 0 };
-    float b[8] = { 0 };
+namespace gl {
 
-    for (int i = 0; i < 4; i++) {
-        float x = src[i].x;
-        float y = src[i].y;
-        float x_prime = dst[i].x;
-        float y_prime = dst[i].y;
+    // Optimized LU decomposition solver for 8x8 systems
+    class LinearSolver8x8 {
+    private:
+        float A[8][8];  // Matrix
+        float b[8];     // Right-hand side
+        int pivots[8];  // Pivot indices
 
-        // Row for x equation
-        A[2 * i][0] = x;
-        A[2 * i][1] = y;
-        A[2 * i][2] = 1.0f;
-        A[2 * i][3] = 0.0f;
-        A[2 * i][4] = 0.0f;
-        A[2 * i][5] = 0.0f;
-        A[2 * i][6] = -x * x_prime;
-        A[2 * i][7] = -y * x_prime;
-        b[2 * i] = x_prime;
-
-        // Row for y equation
-        A[2 * i + 1][0] = 0.0f;
-        A[2 * i + 1][1] = 0.0f;
-        A[2 * i + 1][2] = 0.0f;
-        A[2 * i + 1][3] = x;
-        A[2 * i + 1][4] = y;
-        A[2 * i + 1][5] = 1.0f;
-        A[2 * i + 1][6] = -x * y_prime;
-        A[2 * i + 1][7] = -y * y_prime;
-        b[2 * i + 1] = y_prime;
-    }
-
-    // Solve the 8x8 system using Gaussian elimination.
-    float M[8][9]; // augmented matrix (8x8 and the b column)
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            M[i][j] = A[i][j];
-        }
-        M[i][8] = b[i];
-    }
-
-    for (int i = 0; i < 8; i++) {
-        // Find the pivot row
-        int pivot = i;
-        for (int j = i + 1; j < 8; j++) {
-            if (fabs(M[j][i]) > fabs(M[pivot][i]))
-                pivot = j;
-        }
-        if (fabs(M[pivot][i]) < 1e-9)
-            throw std::runtime_error("Singular matrix encountered in homography computation.");
-
-        // Swap current row with pivot row
-        if (pivot != i) {
-            for (int j = 0; j < 9; j++) {
-                std::swap(M[i][j], M[pivot][j]);
+    public:
+        LinearSolver8x8() {
+            // Initialize pivot array
+            for (int i = 0; i < 8; ++i) {
+                pivots[i] = i;
             }
         }
-        // Normalize pivot row
-        float factor = M[i][i];
-        for (int j = i; j < 9; j++) {
-            M[i][j] /= factor;
-        }
-        // Eliminate below
-        for (int j = i + 1; j < 8; j++) {
-            float factor2 = M[j][i];
-            for (int k = i; k < 9; k++) {
-                M[j][k] -= factor2 * M[i][k];
+
+        // Set matrix and right-hand side values
+        void setSystem(const float matrix[8][8], const float rhs[8]) {
+            // Copy matrix and rhs
+            for (int i = 0; i < 8; ++i) {
+                for (int j = 0; j < 8; ++j) {
+                    A[i][j] = matrix[i][j];
+                }
+                b[i] = rhs[i];
+            }
+
+            // Reset pivots
+            for (int i = 0; i < 8; ++i) {
+                pivots[i] = i;
             }
         }
-    }
-    // Back substitution
-    float h[8];
-    for (int i = 7; i >= 0; i--) {
-        h[i] = M[i][8];
-        for (int j = i + 1; j < 8; j++) {
-            h[i] -= M[i][j] * h[j];
+
+        // Perform LU decomposition with partial pivoting
+        bool decompose() {
+            constexpr float EPSILON = 1e-10f;
+
+            for (int i = 0; i < 8; ++i) {
+                // Find pivot
+                int pivot_row = i;
+                float max_val = std::abs(A[pivots[i]][i]);
+
+                for (int j = i + 1; j < 8; ++j) {
+                    float val = std::abs(A[pivots[j]][i]);
+                    if (val > max_val) {
+                        max_val = val;
+                        pivot_row = j;
+                    }
+                }
+
+                // Check for singularity
+                if (max_val < EPSILON) {
+                    return false;
+                }
+
+                // Swap pivot rows if necessary
+                if (pivot_row != i) {
+                    std::swap(pivots[i], pivots[pivot_row]);
+                }
+
+                // Get pivot row index
+                int pivot_idx = pivots[i];
+
+                // For all rows below pivot
+                for (int j = i + 1; j < 8; ++j) {
+                    int row_idx = pivots[j];
+
+                    // Calculate multiplier
+                    float m = A[row_idx][i] / A[pivot_idx][i];
+                    A[row_idx][i] = m;  // Store multiplier in the eliminated position
+
+                    // Eliminate
+                    for (int k = i + 1; k < 8; ++k) {
+                        A[row_idx][k] -= m * A[pivot_idx][k];
+                    }
+                }
+            }
+
+            return true;
         }
+
+        // Solve the system after decomposition
+        void solve(float x[8]) {
+            // Forward substitution (Ly = b)
+            float y[8];
+            for (int i = 0; i < 8; ++i) {
+                int pivot_idx = pivots[i];
+                y[i] = b[pivot_idx];
+
+                for (int j = 0; j < i; ++j) {
+                    y[i] -= A[pivot_idx][j] * y[j];
+                }
+            }
+
+            // Backward substitution (Ux = y)
+            for (int i = 7; i >= 0; --i) {
+                int pivot_idx = pivots[i];
+                x[i] = y[i];
+
+                for (int j = i + 1; j < 8; ++j) {
+                    x[i] -= A[pivot_idx][j] * x[j];
+                }
+
+                x[i] /= A[pivot_idx][i];
+            }
+        }
+    };
+
+    // Optimized homography computation
+    class HomographyCalculator {
+    private:
+        LinearSolver8x8 solver;
+
+        // Cache for last computed homography
+        struct HomographyCache {
+            std::array<glm::vec2, 4> src;
+            std::array<glm::vec2, 4> dst;
+            glm::mat3 matrix;
+        };
+
+        std::optional<HomographyCache> cache;
+
+        bool arePointsSame(const std::array<glm::vec2, 4>& p1, const std::array<glm::vec2, 4>& p2, float epsilon = 1e-5f) {
+            for (int i = 0; i < 4; ++i) {
+                if (!glm::all(glm::epsilonEqual(p1[i], p2[i], epsilon))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+    public:
+        HomographyCalculator() = default;
+
+        // Compute homography with optional caching
+        glm::mat3 compute(const std::array<glm::vec2, 4>& src, const std::array<glm::vec2, 4>& dst, bool useCache = true) {
+            // Check cache first if enabled
+            if (useCache && cache.has_value()) {
+                if (arePointsSame(src, cache->src) && arePointsSame(dst, cache->dst)) {
+                    return cache->matrix;
+                }
+            }
+
+            // Set up the 8x8 system for homography
+            float A[8][8] = {};
+            float b[8] = {};
+
+            // Fill the matrix A and vector b with constraints from the point pairs
+            for (int i = 0; i < 4; ++i) {
+                float x = src[i].x;
+                float y = src[i].y;
+                float x_prime = dst[i].x;
+                float y_prime = dst[i].y;
+
+                // Row for x equation: x*h0 + y*h1 + h2 - x*x'*h6 - y*x'*h7 = x'
+                A[i * 2][0] = x;
+                A[i * 2][1] = y;
+                A[i * 2][2] = 1.0f;
+                A[i * 2][3] = 0.0f;
+                A[i * 2][4] = 0.0f;
+                A[i * 2][5] = 0.0f;
+                A[i * 2][6] = -x * x_prime;
+                A[i * 2][7] = -y * x_prime;
+                b[i * 2] = x_prime;
+
+                // Row for y equation: x*h3 + y*h4 + h5 - x*y'*h6 - y*y'*h7 = y'
+                A[i * 2 + 1][0] = 0.0f;
+                A[i * 2 + 1][1] = 0.0f;
+                A[i * 2 + 1][2] = 0.0f;
+                A[i * 2 + 1][3] = x;
+                A[i * 2 + 1][4] = y;
+                A[i * 2 + 1][5] = 1.0f;
+                A[i * 2 + 1][6] = -x * y_prime;
+                A[i * 2 + 1][7] = -y * y_prime;
+                b[i * 2 + 1] = y_prime;
+            }
+
+            // Set up the solver
+            solver.setSystem(A, b);
+
+            // Perform LU decomposition
+            if (!solver.decompose()) {
+                throw std::runtime_error("Singular matrix encountered in homography computation");
+            }
+
+            // Solve the system
+            float h[8];
+            solver.solve(h);
+
+            // Construct homography matrix (in column-major order for GLM)
+            glm::mat3 H(1.0f);
+            H[0][0] = h[0]; H[1][0] = h[1]; H[2][0] = h[2]; // First column
+            H[0][1] = h[3]; H[1][1] = h[4]; H[2][1] = h[5]; // Second column
+            H[0][2] = h[6]; H[1][2] = h[7]; H[2][2] = 1.0f; // Third column
+
+            // Update cache if enabled
+            if (useCache) {
+                cache = HomographyCache{ src, dst, H };
+            }
+
+            return H;
+        }
+
+        // Clear the cache
+        void clearCache() {
+            cache.reset();
+        }
+    };
+
+    // Global calculator instance
+    static HomographyCalculator homographyCalculator;
+
+    // External API for backward compatibility
+    inline glm::mat3 computeHomography(const std::array<glm::vec2, 4>& src, const std::array<glm::vec2, 4>& dst) {
+        return homographyCalculator.compute(src, dst);
     }
 
-    glm::mat3 H(1.0f);
-    // Note: GLM uses column-major order.
-    H[0][0] = h[0]; H[1][0] = h[1]; H[2][0] = h[2];
-    H[0][1] = h[3]; H[1][1] = h[4]; H[2][1] = h[5];
-    H[0][2] = h[6]; H[1][2] = h[7]; H[2][2] = 1.0f;
-    return H;
-}
+} // namespace gl
 
 #endif // HOMOGRAPHY_HPP

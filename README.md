@@ -1,4 +1,4 @@
-﻿# Cube Homography Demo
+﻿﻿# Cube Decal
 
 A 3D graphics application demonstrating homography projection from a 3D cube to a 2D plane, built with modern C++ and OpenGL.
 
@@ -20,26 +20,6 @@ A 3D graphics application demonstrating homography projection from a 3D cube to 
 - GLFW3
 - GLM (OpenGL Mathematics)
 - stb_image (included)
-
-## Project Structure
-
-```
-src/
-├── core/               # Core framework components
-│   ├── Component.hpp   # Base component class
-│   ├── Entity.hpp      # Entity container for components
-│   └── Scene.cpp/hpp   # Scene management
-├── components/         # Specialized components
-│   ├── camera/         # Camera handling components
-│   ├── effects/        # Visual effects including homography
-│   ├── geometry/       # Mesh generation and management
-│   ├── input/          # Input handling
-│   └── rendering/      # Rendering components
-├── window/             # Window management
-├── managers/           # Resource management
-├── gl/                 # OpenGL abstractions
-└── include/            # External libraries
-```
 
 ## Building
 
@@ -69,10 +49,6 @@ Key technical components:
 - **Homography Effect**: Computes and applies a homography matrix to transform texture coordinates
 - **OpenGL Abstraction Layer**: Clean C++ wrappers around raw OpenGL calls
 - **Resource Management**: Efficient handling of textures, shaders, and other assets
-
-## License
-
-MIT License
 
 ---
 

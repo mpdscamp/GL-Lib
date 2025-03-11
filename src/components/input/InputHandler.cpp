@@ -132,7 +132,9 @@ void InputHandler::processInput(float deltaTime) {
                     bool rightKeyPressed = glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS;
                     bool leftKeyPressed = glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS;
 
-                    float rotationAngle = cubeMesh->getModelMatrix()[0][0]; // Extract from model matrix
+                    // Get current rotation angle and axis from cubeMesh
+                    float rotationAngle = cubeMesh->getRotationAngle();
+                    const glm::vec3& rotationAxis = cubeMesh->getRotationAxis();
 
                     if (rightKeyPressed) {
                         rotationAngle += deltaTime * 60.0f;
@@ -143,7 +145,7 @@ void InputHandler::processInput(float deltaTime) {
 
                     // Update rotation if changed
                     if (rightKeyPressed || leftKeyPressed) {
-                        cubeMesh->setRotation(rotationAngle, glm::vec3(0.5f, 1.0f, 0.0f));
+                        cubeMesh->setRotation(rotationAngle, rotationAxis);
                     }
                 }
             }

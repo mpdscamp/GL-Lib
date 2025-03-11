@@ -1,6 +1,5 @@
 #ifndef MESH_COMPONENT_HPP
 #define MESH_COMPONENT_HPP
-
 #include "../../core/Component.hpp"
 #include "../../../include/gl/buffer.hpp"
 #include "../../../include/gl/vertex_array.hpp"
@@ -18,7 +17,6 @@ class MeshComponent : public Component {
 public:
     MeshComponent();
     ~MeshComponent();
-
     void init() override;
 
     // Create predefined shapes
@@ -41,26 +39,31 @@ public:
     }
     void setScale(const glm::vec3& scale) { scale_ = scale; transformDirty_ = true; }
 
+    // Getter methods for transform properties
+    const glm::vec3& getPosition() const { return position_; }
+    float getRotationAngle() const { return rotationAngle_; }
+    const glm::vec3& getRotationAxis() const { return rotationAxis_; }
+    const glm::vec3& getScale() const { return scale_; }
+
     // Animation
     void animate(float deltaTime);
     void setAutoRotate(bool autoRotate) { autoRotate_ = autoRotate; }
     void setRotationSpeed(float speed) { rotationSpeed_ = speed; }
+    bool isAutoRotating() const { return autoRotate_; }
+    float getRotationSpeed() const { return rotationSpeed_; }
 
     // Access
     gl::VertexArray* getVAO() const { return vao_.get(); }
     int getVertexCount() const { return vertexCount_; }
     int getIndexCount() const { return indexCount_; }
     bool hasIndices() const { return indexCount_ > 0; }
-
     glm::mat4 getModelMatrix();
 
 private:
     void updateTransform();
-
     std::unique_ptr<gl::VertexArray> vao_;
     std::unique_ptr<gl::VertexBuffer> vbo_;
     std::unique_ptr<gl::ElementBuffer> ebo_;
-
     int vertexCount_ = 0;
     int indexCount_ = 0;
 
@@ -78,5 +81,4 @@ private:
     bool transformDirty_ = true;
     glm::mat4 modelMatrix_ = glm::mat4(1.0f);
 };
-
 #endif // MESH_COMPONENT_HPP

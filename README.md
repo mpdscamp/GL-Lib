@@ -1,4 +1,4 @@
-﻿﻿# Cube Decal
+# Cube Decal
 
 A 3D graphics application demonstrating homography projection from a 3D cube to a 2D plane, built with modern C++ and OpenGL.
 

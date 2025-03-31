@@ -51,5 +51,3 @@ Key technical components:
 - **Resource Management**: Efficient handling of textures, shaders, and other assets
 
 ---
-
-*Created as part of the Computer Graphics course at Instituto Militar de Engenharia (IME), 2025*
